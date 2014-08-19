@@ -7,7 +7,8 @@ import javassist.CtClass;
 import javassist.CtMethod;
 
 import org.codelibs.qrcache.module.QueryResultCacheModule;
-import org.codelibs.qrcache.rest.RestClearQueryResultCacheAction;
+import org.codelibs.qrcache.rest.RestClearQRCacheAction;
+import org.codelibs.qrcache.rest.RestStatsQRCacheAction;
 import org.elasticsearch.common.collect.Lists;
 import org.elasticsearch.common.inject.Module;
 import org.elasticsearch.plugins.AbstractPlugin;
@@ -77,7 +78,8 @@ public class QueryResultCachePlugin extends AbstractPlugin {
 
     // for Rest API
     public void onModule(final RestModule module) {
-        module.addRestAction(RestClearQueryResultCacheAction.class);
+        module.addRestAction(RestClearQRCacheAction.class);
+        module.addRestAction(RestStatsQRCacheAction.class);
     }
 
     @Override

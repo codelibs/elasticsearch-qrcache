@@ -33,6 +33,7 @@ import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.BytesStreamInput;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.common.metrics.CounterMetric;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.unit.MemorySizeValue;
@@ -71,6 +72,12 @@ public class QueryResultCache extends AbstractComponent implements
 
     private Set<String> indicesToClean = ConcurrentCollections
             .newConcurrentSet();
+
+    private volatile CounterMetric hitsMetric = new CounterMetric();
+
+    private volatile CounterMetric totalMetric = new CounterMetric();
+
+    private volatile CounterMetric evictionsMetric = new CounterMetric();
 
     private static QueryResultCache INSTANCE;
 
@@ -134,6 +141,19 @@ public class QueryResultCache extends AbstractComponent implements
         cache = cacheBuilder.build();
     }
 
+    public QueryResultCacheStats stats() {
+        long reqMemSize = 0;
+        long resMemSize = 0;
+        for (final Map.Entry<Key, BytesReference> entry : cache.asMap()
+                .entrySet()) {
+            reqMemSize += entry.getKey().ramBytesUsed();
+            resMemSize += entry.getValue().length();
+        }
+        return new QueryResultCacheStats(reqMemSize, resMemSize,
+                totalMetric.count(), hitsMetric.count(),
+                evictionsMetric.count());
+    }
+
     private static class QueryCacheWeigher implements
             Weigher<Key, BytesReference> {
         @Override
@@ -153,14 +173,14 @@ public class QueryResultCache extends AbstractComponent implements
         if (notification.getKey() == null) {
             return;
         }
-        // notification.getKey().shard.queryCache().onRemoval(notification);
+        evictionsMetric.inc();
     }
 
     public boolean canCache(final SearchRequest request) {
         if (hasLength(request.templateSource())) {
             return false;
         }
-        String[] indices = request.indices();
+        final String[] indices = request.indices();
         if (indices == null || indices.length == 0) {
             return false;
         }
@@ -190,8 +210,10 @@ public class QueryResultCache extends AbstractComponent implements
             final ActionListener<SearchResponse> listener) throws Exception {
         final Key key = buildKey(request);
         if (canCache(request)) {
+            totalMetric.inc();
             final BytesReference value = cache.getIfPresent(key);
             if (value != null) {
+                hitsMetric.inc();
                 final SearchResponse response = readFromCache(value);
                 if (logger.isDebugEnabled()) {
                     logger.debug("Read cached response for {}/{}/{}: {}",
@@ -305,6 +327,9 @@ public class QueryResultCache extends AbstractComponent implements
                 logger.debug("Invalidating all cache.");
             }
             cache.invalidateAll();
+            totalMetric = new CounterMetric();
+            hitsMetric = new CounterMetric();
+            evictionsMetric = new CounterMetric();
         } else {
             for (final String index : indices) {
                 clear(index);
@@ -440,7 +465,7 @@ public class QueryResultCache extends AbstractComponent implements
             final List<Key> keyToClean = new ArrayList<>();
 
             for (final Key key : cache.asMap().keySet()) {
-                String[] indices = key.indices();
+                final String[] indices = key.indices();
                 if (indices == null || indices.length == 0) {
                     keyToClean.add(key);
                     if (logger.isDebugEnabled()) {
