@@ -149,7 +149,7 @@ public class QueryResultCache extends AbstractComponent implements
             reqMemSize += entry.getKey().ramBytesUsed();
             resMemSize += entry.getValue().length();
         }
-        return new QueryResultCacheStats(reqMemSize, resMemSize,
+        return new QueryResultCacheStats(cache.size(), reqMemSize, resMemSize,
                 totalMetric.count(), hitsMetric.count(),
                 evictionsMetric.count());
     }
@@ -460,6 +460,10 @@ public class QueryResultCache extends AbstractComponent implements
         }
 
         private void reap() {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Clearing cached responses...");
+            }
+
             final Set<String> currentIndicesToClean = indicesToClean;
             indicesToClean = ConcurrentCollections.newConcurrentSet();
             final List<Key> keyToClean = new ArrayList<>();

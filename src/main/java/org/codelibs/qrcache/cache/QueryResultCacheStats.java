@@ -12,6 +12,8 @@ import org.elasticsearch.common.xcontent.XContentBuilderString;
 
 public class QueryResultCacheStats implements Streamable, ToXContent {
 
+    long size;
+
     long requestMemorySize;
 
     long responseMemorySize;
@@ -25,9 +27,10 @@ public class QueryResultCacheStats implements Streamable, ToXContent {
     public QueryResultCacheStats() {
     }
 
-    public QueryResultCacheStats(final long requestMemorySize,
+    public QueryResultCacheStats(final long size, final long requestMemorySize,
             final long responseMemorySize, final long total, final long hits,
             final long evictions) {
+        this.size = size;
         this.requestMemorySize = requestMemorySize;
         this.responseMemorySize = responseMemorySize;
         this.total = total;
@@ -36,6 +39,7 @@ public class QueryResultCacheStats implements Streamable, ToXContent {
     }
 
     public void add(final QueryResultCacheStats stats) {
+        size += stats.size;
         requestMemorySize += stats.requestMemorySize;
         responseMemorySize += stats.responseMemorySize;
         total += stats.total;
@@ -43,7 +47,15 @@ public class QueryResultCacheStats implements Streamable, ToXContent {
         evictions += stats.evictions;
     }
 
-    public long getMemorySizeInBytes() {
+    public long getSize() {
+        return size;
+    }
+
+    public long getRequestMemorySizeInBytes() {
+        return requestMemorySize;
+    }
+
+    public long getResponseMemorySizeInBytes() {
         return requestMemorySize;
     }
 
@@ -69,6 +81,7 @@ public class QueryResultCacheStats implements Streamable, ToXContent {
 
     @Override
     public void readFrom(final StreamInput in) throws IOException {
+        size = in.readVLong();
         requestMemorySize = in.readVLong();
         responseMemorySize = in.readVLong();
         total = in.readVLong();
@@ -78,6 +91,7 @@ public class QueryResultCacheStats implements Streamable, ToXContent {
 
     @Override
     public void writeTo(final StreamOutput out) throws IOException {
+        out.writeVLong(size);
         out.writeVLong(requestMemorySize);
         out.writeVLong(responseMemorySize);
         out.writeVLong(total);
@@ -89,6 +103,7 @@ public class QueryResultCacheStats implements Streamable, ToXContent {
     public XContentBuilder toXContent(final XContentBuilder builder,
             final Params params) throws IOException {
         builder.startObject(Fields.QUERY_CACHE_STATS);
+        builder.field(Fields.SIZE, getSize());
         builder.byteSizeField(Fields.REQUEST_MEMORY_SIZE_IN_BYTES,
                 Fields.REQUEST_MEMORY_SIZE, requestMemorySize);
         builder.byteSizeField(Fields.RESPONSE_MEMORY_SIZE_IN_BYTES,
@@ -103,6 +118,9 @@ public class QueryResultCacheStats implements Streamable, ToXContent {
     static final class Fields {
         static final XContentBuilderString QUERY_CACHE_STATS = new XContentBuilderString(
                 "query_result_cache");
+
+        static final XContentBuilderString SIZE = new XContentBuilderString(
+                "size");
 
         static final XContentBuilderString REQUEST_MEMORY_SIZE = new XContentBuilderString(
                 "request_memory_size");

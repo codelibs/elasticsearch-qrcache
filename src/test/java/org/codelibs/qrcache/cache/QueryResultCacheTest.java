@@ -49,6 +49,7 @@ public class QueryResultCacheTest {
                         .build());
         {
             final QueryResultCacheStats stats = queryResultCache.stats();
+            assertEquals(0, stats.getSize());
             assertEquals(0, stats.getTotal());
             assertEquals(0, stats.getHits());
             assertEquals(0, stats.getEvictions());
@@ -74,6 +75,7 @@ public class QueryResultCacheTest {
 
             Thread.sleep(500);
             final QueryResultCacheStats stats = queryResultCache.stats();
+            assertEquals(1, stats.getSize());
             assertEquals(1, stats.getTotal());
             assertEquals(0, stats.getHits());
             assertEquals(0, stats.getEvictions());
@@ -91,6 +93,7 @@ public class QueryResultCacheTest {
             assertEquals(1000, hits.getTotalHits());
 
             final QueryResultCacheStats stats = queryResultCache.stats();
+            assertEquals(1, stats.getSize());
             assertEquals(2, stats.getTotal());
             assertEquals(1, stats.getHits());
             assertEquals(0, stats.getEvictions());
@@ -102,6 +105,7 @@ public class QueryResultCacheTest {
 
         {
             final QueryResultCacheStats stats = queryResultCache.stats();
+            assertEquals(0, stats.getSize());
             assertEquals(0, stats.getTotal());
             assertEquals(0, stats.getHits());
             assertEquals(0, stats.getEvictions());
