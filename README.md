@@ -24,7 +24,7 @@ Please file an [issue](https://github.com/codelibs/elasticsearch-qrcache/issues 
 
 ### Install QRCache Plugin
 
-    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.3.2
+    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.3.0
 
 ## References
 
@@ -35,4 +35,12 @@ Query Result Cache is enabled if index.cache.query_result.enable is set to true.
     curl -XPOST 'localhost:9200/my_index/_close'
     curl -XPUT 'localhost:9200/my_index/_settings?index.cache.query_result.enable=true'
     curl -XPOST 'localhost:9200/my_index/_open'
+
+### Check Stats
+
+    curl -XGET 'localhost:9200/_qrc/stats?pretty'
+
+### Clear Cache
+
+    curl -XGET 'localhost:9200/my_index/_qrc/clear?pretty'
 
