@@ -70,7 +70,7 @@ public class QueryResultCache extends AbstractComponent implements
 
     private final ThreadLocal<Boolean> processing = new ThreadLocal<Boolean>();
 
-    private Set<String> indicesToClean = ConcurrentCollections
+    private volatile Set<String> indicesToClean = ConcurrentCollections
             .newConcurrentSet();
 
     private volatile CounterMetric hitsMetric = new CounterMetric();
@@ -227,28 +227,7 @@ public class QueryResultCache extends AbstractComponent implements
                 action.execute(request, new ActionListener<SearchResponse>() {
                     @Override
                     public void onResponse(final SearchResponse response) {
-                        try {
-                            threadPool.executor(ThreadPool.Names.GENERIC)
-                                    .execute(new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            writeToCache(key, response);
-                                            if (logger.isDebugEnabled()) {
-                                                logger.debug(
-                                                        "Wrote cached response for {}/{}/{}: {}",
-                                                        response.getTotalShards(),
-                                                        response.getSuccessfulShards(),
-                                                        response.getFailedShards(),
-                                                        response.getHits()
-                                                                .getTotalHits());
-                                            }
-                                        }
-                                    });
-                        } catch (final EsRejectedExecutionException ex) {
-                            logger.warn(
-                                    "Can not run a process to store a cache",
-                                    ex);
-                        }
+                        onCache(key, response);
                         listener.onResponse(response);
                     }
 
@@ -263,18 +242,43 @@ public class QueryResultCache extends AbstractComponent implements
         }
     }
 
-    private void writeToCache(final Key key, final SearchResponse response) {
+    private void onCache(final Key key, final SearchResponse response) {
+        if (response.isTimedOut()) {
+            return;
+        }
+
         try {
-            cache.get(key, new Callable<BytesReference>() {
-                @Override
-                public BytesReference call() throws Exception {
-                    final BytesStreamOutput out = new BytesStreamOutput();
-                    response.writeTo(out);
-                    return out.bytes();
-                }
-            });
-        } catch (final ExecutionException e) {
-            logger.warn("Failed to write a responses to a buffer.", e);
+            threadPool.executor(ThreadPool.Names.GENERIC).execute(
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                cache.get(key, new Callable<BytesReference>() {
+                                    @Override
+                                    public BytesReference call()
+                                            throws Exception {
+                                        final BytesStreamOutput out = new BytesStreamOutput();
+                                        response.writeTo(out);
+                                        return out.bytes();
+                                    }
+                                });
+                            } catch (final ExecutionException e) {
+                                logger.warn(
+                                        "Failed to write a responses to a buffer.",
+                                        e);
+                            }
+                            if (logger.isDebugEnabled()) {
+                                logger.debug(
+                                        "Wrote cached response for {}/{}/{}: {}",
+                                        response.getTotalShards(), response
+                                                .getSuccessfulShards(),
+                                        response.getFailedShards(), response
+                                                .getHits().getTotalHits());
+                            }
+                        }
+                    });
+        } catch (final EsRejectedExecutionException ex) {
+            logger.warn("Can not run a process to store a cache", ex);
         }
     }
 
@@ -326,6 +330,7 @@ public class QueryResultCache extends AbstractComponent implements
             if (logger.isDebugEnabled()) {
                 logger.debug("Invalidating all cache.");
             }
+            indicesToClean.clear();
             cache.invalidateAll();
             totalMetric = new CounterMetric();
             hitsMetric = new CounterMetric();
@@ -333,6 +338,18 @@ public class QueryResultCache extends AbstractComponent implements
         } else {
             for (final String index : indices) {
                 clear(index);
+            }
+            try {
+                threadPool.executor(ThreadPool.Names.GENERIC).execute(
+                        new Runnable() {
+                            @Override
+                            public void run() {
+                                reaper.reap();
+                            }
+                        });
+            } catch (final EsRejectedExecutionException ex) {
+                logger.debug("Can not run ReaderCleaner - execution rejected",
+                        ex);
             }
         }
     }
@@ -430,19 +447,26 @@ public class QueryResultCache extends AbstractComponent implements
                         new Runnable() {
                             @Override
                             public void run() {
-                                reap();
-                                schedule();
+                                try {
+                                    reap();
+                                } finally {
+                                    schedule();
+                                }
                             }
                         });
             } catch (final EsRejectedExecutionException ex) {
                 logger.debug("Can not run ReaderCleaner - execution rejected",
                         ex);
+                schedule();
             }
         }
 
         private void schedule() {
             boolean success = false;
             while (!success) {
+                if (closed) {
+                    break;
+                }
                 try {
                     threadPool.schedule(cleanInterval, ThreadPool.Names.SAME,
                             this);
@@ -506,7 +530,9 @@ public class QueryResultCache extends AbstractComponent implements
                 }
             }
 
-            cache.invalidateAll(keyToClean);
+            if (!keyToClean.isEmpty()) {
+                cache.invalidateAll(keyToClean);
+            }
         }
     }
 }
