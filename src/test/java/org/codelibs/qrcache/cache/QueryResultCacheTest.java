@@ -7,9 +7,9 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
+import org.codelibs.elasticsearch.runner.net.Curl;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.client.Client;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.SearchHits;
@@ -38,7 +38,6 @@ public class QueryResultCacheTest {
         final QueryResultCache queryResultCache = QueryResultCache.get();
 
         assertThat(1, is(runner.getNodeSize()));
-        final Client client = runner.client();
 
         final String index = "sample";
         final String type = "data";
@@ -66,10 +65,8 @@ public class QueryResultCacheTest {
 
         assertThat(Long.valueOf(queryResultCache.cache.size()), is(0L));
         {
-            final SearchResponse searchResponse = client
-                    .prepareSearch("sample")
-                    .setQuery(QueryBuilders.matchAllQuery()).execute()
-                    .actionGet();
+            final SearchResponse searchResponse = runner.search(index, type,
+                    QueryBuilders.matchAllQuery(), null, 0, 10);
             final SearchHits hits = searchResponse.getHits();
             assertEquals(1000, hits.getTotalHits());
 
@@ -85,10 +82,8 @@ public class QueryResultCacheTest {
 
         assertThat(Long.valueOf(queryResultCache.cache.size()), is(1L));
         {
-            final SearchResponse searchResponse = client
-                    .prepareSearch("sample")
-                    .setQuery(QueryBuilders.matchAllQuery()).execute()
-                    .actionGet();
+            final SearchResponse searchResponse = runner.search(index, type,
+                    QueryBuilders.matchAllQuery(), null, 0, 10);
             final SearchHits hits = searchResponse.getHits();
             assertEquals(1000, hits.getTotalHits());
 
@@ -113,5 +108,68 @@ public class QueryResultCacheTest {
             assertEquals(0, stats.getResponseMemorySize().bytes());
         }
 
+        assertEquals(
+                200,
+                Curl.put(
+                        runner.node(),
+                        "/"
+                                + index
+                                + "/_settings?index.cache.query_result.enable=false")
+                        .execute().getHttpStatusCode());
+
+        assertThat(Long.valueOf(queryResultCache.cache.size()), is(0L));
+        {
+            Thread.sleep(500);
+            final SearchResponse searchResponse1 = runner.search(index, type,
+                    QueryBuilders.matchAllQuery(), null, 0, 10);
+            final SearchHits hits1 = searchResponse1.getHits();
+            assertEquals(1000, hits1.getTotalHits());
+            Thread.sleep(500);
+            final SearchResponse searchResponse2 = runner.search(index, type,
+                    QueryBuilders.matchAllQuery(), null, 0, 10);
+            final SearchHits hits2 = searchResponse2.getHits();
+            assertEquals(1000, hits2.getTotalHits());
+            Thread.sleep(500);
+
+            final QueryResultCacheStats stats = queryResultCache.stats();
+            assertEquals(0, stats.getSize());
+            assertEquals(0, stats.getTotal());
+            assertEquals(0, stats.getHits());
+            assertEquals(0, stats.getEvictions());
+            assertEquals(0, stats.getRequestMemorySize().bytes());
+            assertEquals(0, stats.getResponseMemorySize().bytes());
+        }
+
+        assertEquals(
+                200,
+                Curl.put(
+                        runner.node(),
+                        "/"
+                                + index
+                                + "/_settings?index.cache.query_result.enable=true")
+                        .execute().getHttpStatusCode());
+
+        assertThat(Long.valueOf(queryResultCache.cache.size()), is(0L));
+        {
+            Thread.sleep(500);
+            final SearchResponse searchResponse1 = runner.search(index, type,
+                    QueryBuilders.matchAllQuery(), null, 0, 10);
+            final SearchHits hits1 = searchResponse1.getHits();
+            assertEquals(1000, hits1.getTotalHits());
+            Thread.sleep(500);
+            final SearchResponse searchResponse2 = runner.search(index, type,
+                    QueryBuilders.matchAllQuery(), null, 0, 10);
+            final SearchHits hits2 = searchResponse2.getHits();
+            assertEquals(1000, hits2.getTotalHits());
+            Thread.sleep(500);
+
+            final QueryResultCacheStats stats = queryResultCache.stats();
+            assertEquals(1, stats.getSize());
+            assertEquals(2, stats.getTotal());
+            assertEquals(1, stats.getHits());
+            assertEquals(0, stats.getEvictions());
+            assertNotEquals(0, stats.getRequestMemorySize().bytes());
+            assertNotEquals(0, stats.getResponseMemorySize().bytes());
+        }
     }
 }
