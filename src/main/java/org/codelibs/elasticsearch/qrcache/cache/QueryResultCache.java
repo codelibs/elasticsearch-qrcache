@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.RamUsageEstimator;
+import org.codelibs.elasticsearch.qrcache.QueryResultCachePlugin;
 import org.elasticsearch.Version;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.search.SearchRequest;
@@ -33,6 +34,8 @@ import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.io.stream.BytesStreamInput;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamInput;
+import org.elasticsearch.common.logging.ESLogger;
+import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.metrics.CounterMetric;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.MemorySizeValue;
@@ -53,6 +56,8 @@ public class QueryResultCache extends AbstractComponent implements
 
     public static final String INDICES_CACHE_QUERY_EXPIRE = "indices.cache.query_result.expire";
 
+    protected final ESLogger logger;
+
     private final ThreadPool threadPool;
 
     private ClusterService clusterService;
@@ -67,8 +72,6 @@ public class QueryResultCache extends AbstractComponent implements
 
     protected volatile Cache<Key, BytesReference> cache;
 
-    private final ThreadLocal<Boolean> processing = new ThreadLocal<Boolean>();
-
     private volatile Set<String> indicesToClean = ConcurrentCollections
             .newConcurrentSet();
 
@@ -78,14 +81,15 @@ public class QueryResultCache extends AbstractComponent implements
 
     private volatile CounterMetric evictionsMetric = new CounterMetric();
 
-    private static QueryResultCache INSTANCE;
-
     @Inject
     public QueryResultCache(final Settings settings,
             final ClusterService clusterService, final ThreadPool threadPool) {
         super(settings);
         this.clusterService = clusterService;
         this.threadPool = threadPool;
+        this.logger = Loggers.getLogger(
+                QueryResultCachePlugin.INDEX_LOGGER_NAME, settings);
+
         cleanInterval = settings.getAsTime(INDICES_CACHE_QUERY_CLEAN_INTERVAL,
                 TimeValue.timeValueSeconds(10));
         size = settings.get(INDICES_CACHE_QUERY_SIZE, "1%");
@@ -95,24 +99,6 @@ public class QueryResultCache extends AbstractComponent implements
         reaper = new Reaper();
         threadPool.schedule(cleanInterval, ThreadPool.Names.SAME, reaper);
 
-        INSTANCE = this;
-    }
-
-    public static QueryResultCache get() {
-        return INSTANCE;
-    }
-
-    public boolean begin() {
-        final Boolean processing = this.processing.get();
-        if (processing != null) {
-            return false;
-        }
-        this.processing.set(Boolean.valueOf(true));
-        return true;
-    }
-
-    public void end() {
-        processing.remove();
     }
 
     private void buildCache() {

@@ -15,6 +15,9 @@ import org.elasticsearch.plugins.AbstractPlugin;
 import org.elasticsearch.rest.RestModule;
 
 public class QueryResultCachePlugin extends AbstractPlugin {
+    public static final String REST_LOGGER_NAME = "rest.action.admin.qrcache";
+
+    public static final String INDEX_LOGGER_NAME = "index.qrcache";
 
     @Override
     public String name() {

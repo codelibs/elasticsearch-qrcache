@@ -2,10 +2,13 @@ package org.codelibs.elasticsearch.qrcache.rest;
 
 import java.io.IOException;
 
+import org.codelibs.elasticsearch.qrcache.QueryResultCachePlugin;
 import org.codelibs.elasticsearch.qrcache.cache.QueryResultCache;
 import org.codelibs.elasticsearch.qrcache.cache.QueryResultCacheStats;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.inject.Inject;
+import org.elasticsearch.common.logging.ESLogger;
+import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.json.JsonXContent;
@@ -19,6 +22,8 @@ import org.elasticsearch.rest.RestStatus;
 
 public class RestStatsQRCacheAction extends BaseRestHandler {
 
+    protected final ESLogger logger;
+
     private QueryResultCache queryResultCache;
 
     @Inject
@@ -27,6 +32,8 @@ public class RestStatsQRCacheAction extends BaseRestHandler {
             final QueryResultCache queryResultCache) {
         super(settings, controller, client);
         this.queryResultCache = queryResultCache;
+        this.logger = Loggers.getLogger(
+                QueryResultCachePlugin.REST_LOGGER_NAME, settings);
 
         controller.registerHandler(Method.GET, "/_qrc/stats", this);
     }
