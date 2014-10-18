@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.codelibs</groupId>
 	<artifactId>elasticsearch-qrcache</artifactId>
-	<version>1.3.1-SNAPSHOT</version>
+	<version>1.4.0-SNAPSHOT</version>
 	<packaging>jar</packaging>
 	<description>This plugin provides a feature of Query Result Cache.</description>
 	<inceptionYear>2011</inceptionYear>
@@ -26,7 +26,7 @@
 		<version>7</version>
 	</parent>
 	<properties>
-		<elasticsearch.version>1.3.2</elasticsearch.version>
+		<elasticsearch.version>1.4.0.Beta1</elasticsearch.version>
 	</properties>
 	<build>
 		<plugins>
@@ -87,14 +87,15 @@
 		</dependency>
 		<dependency>
 			<groupId>org.codelibs</groupId>
-			<artifactId>elasticsearch-cluster-runner</artifactId>
-			<version>1.3.2.3</version>
-			<scope>test</scope>
+			<artifactId>elasticsearch-extension</artifactId>
+			<version>1.4.0-SNAPSHOT</version>
+			<scope>provided</scope>
 		</dependency>
 		<dependency>
-			<groupId>org.javassist</groupId>
-			<artifactId>javassist</artifactId>
-			<version>3.18.2-GA</version>
+			<groupId>org.codelibs</groupId>
+			<artifactId>elasticsearch-cluster-runner</artifactId>
+			<version>1.4.0.0</version>
+			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>junit</groupId>

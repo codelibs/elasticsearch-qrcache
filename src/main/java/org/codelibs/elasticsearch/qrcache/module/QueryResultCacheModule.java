@@ -1,6 +1,6 @@
-package org.codelibs.qrcache.module;
+package org.codelibs.elasticsearch.qrcache.module;
 
-import org.codelibs.qrcache.cache.QueryResultCache;
+import org.codelibs.elasticsearch.qrcache.cache.QueryResultCache;
 import org.elasticsearch.common.inject.AbstractModule;
 
 public class QueryResultCacheModule extends AbstractModule {

@@ -1,4 +1,4 @@
-package org.codelibs.qrcache.cache;
+package org.codelibs.elasticsearch.qrcache.cache;
 
 import java.io.IOException;
 

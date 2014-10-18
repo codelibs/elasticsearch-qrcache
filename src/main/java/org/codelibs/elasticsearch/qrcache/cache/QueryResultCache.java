@@ -1,4 +1,4 @@
-package org.codelibs.qrcache.cache;
+package org.codelibs.elasticsearch.qrcache.cache;
 
 import static org.elasticsearch.action.search.ShardSearchFailure.readShardSearchFailure;
 import static org.elasticsearch.common.Strings.hasLength;
@@ -19,7 +19,7 @@ import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
-import org.elasticsearch.action.search.TransportSearchAction;
+import org.elasticsearch.action.support.ActionFilterChain;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.common.bytes.BytesReference;
@@ -35,7 +35,6 @@ import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.metrics.CounterMetric;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.unit.MemorySizeValue;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.concurrent.ConcurrentCollections;
@@ -117,15 +116,8 @@ public class QueryResultCache extends AbstractComponent implements
     }
 
     private void buildCache() {
-        long sizeInBytes = MemorySizeValue.parseBytesSizeValueOrHeapRatio(size)
-                .bytes();
-        if (sizeInBytes > ByteSizeValue.MAX_GUAVA_CACHE_SIZE.bytes()) {
-            logger.warn(
-                    "reducing requested query cache size of [{}] to the maximum allowed size of [{}]",
-                    new ByteSizeValue(sizeInBytes),
-                    ByteSizeValue.MAX_GUAVA_CACHE_SIZE);
-            sizeInBytes = ByteSizeValue.MAX_GUAVA_CACHE_SIZE.bytes();
-        }
+        final long sizeInBytes = MemorySizeValue
+                .parseBytesSizeValueOrHeapRatio(size).bytes();
 
         final CacheBuilder<Key, BytesReference> cacheBuilder = CacheBuilder
                 .newBuilder().maximumWeight(sizeInBytes)
@@ -205,11 +197,11 @@ public class QueryResultCache extends AbstractComponent implements
         return true;
     }
 
-    public void execute(final TransportSearchAction action,
-            final SearchRequest request,
-            final ActionListener<SearchResponse> listener) throws Exception {
-        final Key key = buildKey(request);
-        if (canCache(request)) {
+    public ActionListener execute(final SearchRequest request,
+            final ActionListener<SearchResponse> listener,
+            final ActionFilterChain chain) {
+        try {
+            final Key key = buildKey(request);
             totalMetric.inc();
             final BytesReference value = cache.getIfPresent(key);
             if (value != null) {
@@ -224,7 +216,7 @@ public class QueryResultCache extends AbstractComponent implements
                 }
                 listener.onResponse(response);
             } else {
-                action.execute(request, new ActionListener<SearchResponse>() {
+                return new ActionListener<SearchResponse>() {
                     @Override
                     public void onResponse(final SearchResponse response) {
                         onCache(key, response);
@@ -235,11 +227,12 @@ public class QueryResultCache extends AbstractComponent implements
                     public void onFailure(final Throwable e) {
                         listener.onFailure(e);
                     }
-                });
+                };
             }
-        } else {
-            action.execute(request, listener);
+        } catch (final IOException e) {
+            listener.onFailure(e);
         }
+        return null;
     }
 
     private void onCache(final Key key, final SearchResponse response) {
@@ -291,7 +284,7 @@ public class QueryResultCache extends AbstractComponent implements
             headers = in.readMap();
         }
         final InternalSearchResponse internalResponse = new InternalSearchResponse(
-                null, null, null, null, false);
+                null, null, null, null, false, null);
         internalResponse.readFrom(in);
         final int totalShards = in.readVInt();
         final int successfulShards = in.readVInt();
@@ -419,7 +412,7 @@ public class QueryResultCache extends AbstractComponent implements
 
     }
 
-    private static Key buildKey(final SearchRequest request) throws Exception {
+    private static Key buildKey(final SearchRequest request) throws IOException {
         final BytesStreamOutput out = new BytesStreamOutput();
         request.writeTo(out);
         return new Key(out.bytes().copyBytesArray());

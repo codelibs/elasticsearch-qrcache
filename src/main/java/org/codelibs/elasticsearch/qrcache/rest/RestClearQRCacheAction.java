@@ -1,10 +1,10 @@
-package org.codelibs.qrcache.rest;
+package org.codelibs.elasticsearch.qrcache.rest;
 
 import java.io.IOException;
 
-import org.codelibs.qrcache.cache.QueryResultCache;
-import org.codelibs.qrcache.cache.QueryResultCacheStats;
+import org.codelibs.elasticsearch.qrcache.cache.QueryResultCache;
 import org.elasticsearch.client.Client;
+import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
@@ -17,25 +17,32 @@ import org.elasticsearch.rest.RestRequest;
 import org.elasticsearch.rest.RestRequest.Method;
 import org.elasticsearch.rest.RestStatus;
 
-public class RestStatsQRCacheAction extends BaseRestHandler {
+public class RestClearQRCacheAction extends BaseRestHandler {
 
     private QueryResultCache queryResultCache;
 
     @Inject
-    public RestStatsQRCacheAction(final Settings settings, final Client client,
+    public RestClearQRCacheAction(final Settings settings, final Client client,
             final RestController controller,
             final QueryResultCache queryResultCache) {
-        super(settings, client);
+        super(settings, controller, client);
         this.queryResultCache = queryResultCache;
 
-        controller.registerHandler(Method.GET, "/_qrc/stats", this);
+        controller.registerHandler(Method.POST, "/_qrc/clear", this);
+        controller.registerHandler(Method.POST, "/{index}/_qrc/clear", this);
     }
 
     @Override
     public void handleRequest(final RestRequest request,
             final RestChannel channel, final Client client) {
         try {
-            final QueryResultCacheStats stats = queryResultCache.stats();
+            final String index = request.param("index");
+            if (Strings.isEmpty(index)) {
+                queryResultCache.clear();
+            } else {
+                final String[] indices = index.split(",");
+                queryResultCache.clear(indices);
+            }
 
             final XContentBuilder builder = JsonXContent.contentBuilder();
             final String pretty = request.param("pretty");
@@ -43,9 +50,7 @@ public class RestStatsQRCacheAction extends BaseRestHandler {
                 builder.prettyPrint().lfAtEnd();
             }
             builder.startObject();
-            builder.startObject("_all");
-            stats.toXContent(builder, null);
-            builder.endObject();
+            builder.field("acknowledged", true);
             builder.endObject();
             channel.sendResponse(new BytesRestResponse(RestStatus.OK, builder));
         } catch (final IOException e) {
@@ -55,6 +60,7 @@ public class RestStatsQRCacheAction extends BaseRestHandler {
                 logger.error("Failed to send a failure response.", e1);
             }
         }
+
     }
 
 }
