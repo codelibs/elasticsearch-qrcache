@@ -42,7 +42,8 @@ public class QueryResultCacheTest {
 
     @Test
     public void cachedIndex() throws Exception {
-        final QueryResultCache queryResultCache = QueryResultCache.get();
+        final QueryResultCache queryResultCache = runner
+                .getInstance(QueryResultCache.class);
 
         assertThat(1, is(runner.getNodeSize()));
         final Client client = runner.client();
