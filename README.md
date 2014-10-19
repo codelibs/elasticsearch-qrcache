@@ -10,9 +10,10 @@ On the other hand, our Query Result Cache stores the response to a cache.
 
 ## Version
 
-| Taste     | Elasticsearch |
+| Version   | Elasticsearch |
 |:---------:|:-------------:|
-| master    | 1.3.X         |
+| master    | 1.4.X         |
+| 1.4.0     | 1.4.0.Beta1   |
 | 1.3.0     | 1.3.2         |
 
 ### Issues/Questions
@@ -22,7 +23,16 @@ Please file an [issue](https://github.com/codelibs/elasticsearch-qrcache/issues 
 
 ## Installation
 
-### Install QRCache Plugin
+### Install QRCache Plugin (For 1.4.x)
+
+    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-extension/1.4.0
+    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.4.0
+
+To monitor index refresh event, add the following property to elasticsearch.yml
+
+    engine.filter.refresh: true
+
+### Install QRCache Plugin (For 1.3.x)
 
     $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.3.0
 
