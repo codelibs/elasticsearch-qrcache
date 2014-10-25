@@ -25,12 +25,8 @@ Please file an [issue](https://github.com/codelibs/elasticsearch-qrcache/issues 
 
 ### Install QRCache Plugin (For 1.4.x)
 
-    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-extension/1.4.0
+    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-extension/1.4.1
     $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.4.0
-
-To monitor index refresh event, add the following property to elasticsearch.yml
-
-    engine.filter.refresh: true
 
 ### Install QRCache Plugin (For 1.3.x)
 
@@ -41,10 +37,9 @@ To monitor index refresh event, add the following property to elasticsearch.yml
 ### Enable Query Result Cache for Index
 
 Query Result Cache is enabled if index.cache.query_result.enable is set to true.
+(For 1.3, close the index before updating a setting)
 
-    curl -XPOST 'localhost:9200/my_index/_close'
     curl -XPUT 'localhost:9200/my_index/_settings?index.cache.query_result.enable=true'
-    curl -XPOST 'localhost:9200/my_index/_open'
 
 ### Check Stats
 
