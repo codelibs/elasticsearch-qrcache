@@ -24,7 +24,7 @@ public class QueryResultCacheFilter implements ActionFilter {
             final QueryResultCache queryResultCache) {
         this.queryResultCache = queryResultCache;
 
-        order = settings.getAsInt("indices.qrc.filter.order", 0);
+        order = settings.getAsInt("indices.qrc.filter.order", 5);
     }
 
     @Override
