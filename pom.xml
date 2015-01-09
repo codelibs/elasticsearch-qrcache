@@ -23,10 +23,10 @@
 	<parent>
 		<groupId>org.sonatype.oss</groupId>
 		<artifactId>oss-parent</artifactId>
-		<version>7</version>
+		<version>9</version>
 	</parent>
 	<properties>
-		<elasticsearch.version>1.4.0.Beta1</elasticsearch.version>
+		<elasticsearch.version>1.4.2</elasticsearch.version>
 	</properties>
 	<build>
 		<plugins>
@@ -95,13 +95,7 @@
 		<dependency>
 			<groupId>org.codelibs</groupId>
 			<artifactId>elasticsearch-cluster-runner</artifactId>
-			<version>1.4.0.0</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.javassist</groupId>
-			<artifactId>javassist</artifactId>
-			<version>3.18.2-GA</version>
+			<version>1.4.1.0</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
