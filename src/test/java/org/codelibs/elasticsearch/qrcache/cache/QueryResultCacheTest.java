@@ -29,6 +29,7 @@ public class QueryResultCacheTest {
             @Override
             public void build(final int index, final Builder settingsBuilder) {
                 settingsBuilder.put("engine.filter.refresh", true);
+                settingsBuilder.put("http.cors.enabled", true);
             }
         }).build(newConfigs().numOfNode(1).ramIndexStore());
         runner.ensureGreen();
