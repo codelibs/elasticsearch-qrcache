@@ -13,7 +13,7 @@ On the other hand, our Query Result Cache stores the response to a cache.
 | Version   | Elasticsearch |
 |:---------:|:-------------:|
 | master    | 1.4.X         |
-| 1.4.0     | 1.4.0.Beta1   |
+| 1.4.1     | 1.4.2         |
 | 1.3.0     | 1.3.2         |
 
 ### Issues/Questions
@@ -26,7 +26,7 @@ Please file an [issue](https://github.com/codelibs/elasticsearch-qrcache/issues 
 ### Install QRCache Plugin (For 1.4.x)
 
     $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-extension/1.4.1
-    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.4.0
+    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.4.1
 
 ### Install QRCache Plugin (For 1.3.x)
 
@@ -49,3 +49,12 @@ Query Result Cache is enabled if index.cache.query_result.enable is set to true.
 
     curl -XGET 'localhost:9200/my_index/_qrc/clear?pretty'
 
+### Settings
+
+You can change parameters by elasticsearch.yml.
+
+    indices.cache.query_result.clean_interval: 10s
+    indices.cache.query_result.size: 1%
+    indices.cache.query_result.expire: 1m
+
+clean_interval is an interval time for purging invalid caches, size is a total cache size and expire is an expire time for each cache.
