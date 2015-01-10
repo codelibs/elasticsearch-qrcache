@@ -11,6 +11,7 @@ import org.codelibs.elasticsearch.qrcache.rest.RestStatsQRCacheAction;
 import org.elasticsearch.action.ActionModule;
 import org.elasticsearch.common.collect.Lists;
 import org.elasticsearch.common.inject.Module;
+import org.elasticsearch.index.settings.IndexDynamicSettingsModule;
 import org.elasticsearch.plugins.AbstractPlugin;
 import org.elasticsearch.rest.RestModule;
 
@@ -40,6 +41,10 @@ public class QueryResultCachePlugin extends AbstractPlugin {
     public void onModule(final RestModule module) {
         module.addRestAction(RestClearQRCacheAction.class);
         module.addRestAction(RestStatsQRCacheAction.class);
+    }
+
+    public void onModule(final IndexDynamicSettingsModule module) {
+        module.addDynamicSettings("index.cache.query_result.*");
     }
 
     @Override
