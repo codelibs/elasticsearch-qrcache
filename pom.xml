@@ -89,13 +89,13 @@
 		<dependency>
 			<groupId>org.codelibs</groupId>
 			<artifactId>elasticsearch-extension</artifactId>
-			<version>1.5.0-SNAPSHOT</version>
+			<version>1.5.0</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.codelibs</groupId>
 			<artifactId>elasticsearch-cluster-runner</artifactId>
-			<version>1.5.0.0</version>
+			<version>1.5.0.1</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
