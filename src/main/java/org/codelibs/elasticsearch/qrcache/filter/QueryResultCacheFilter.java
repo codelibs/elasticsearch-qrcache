@@ -6,18 +6,17 @@ import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.ActionResponse;
 import org.elasticsearch.action.search.SearchAction;
 import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.action.support.ActionFilter;
 import org.elasticsearch.action.support.ActionFilterChain;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
 
 public class QueryResultCacheFilter implements ActionFilter {
+    private static final String SEARCH_REQUEST_INVOKED = "filter.codelibs.qrcache.Invoked";
+
     private int order;
 
     private QueryResultCache queryResultCache;
-
-    private ThreadLocal<SearchType> currentSearchType = new ThreadLocal<>();
 
     @Inject
     public QueryResultCacheFilter(final Settings settings,
@@ -33,37 +32,37 @@ public class QueryResultCacheFilter implements ActionFilter {
     }
 
     @Override
-    public void apply(final String action, final ActionRequest request,
-            final ActionListener listener, final ActionFilterChain chain) {
+    public void apply(final String action,
+            @SuppressWarnings("rawtypes") final ActionRequest request,
+            @SuppressWarnings("rawtypes") final ActionListener listener,
+            final ActionFilterChain chain) {
         if (!SearchAction.INSTANCE.name().equals(action)) {
             chain.proceed(action, request, listener);
             return;
         }
 
         final SearchRequest searchRequest = (SearchRequest) request;
-        final SearchType searchType = currentSearchType.get();
-        if (searchType == null) {
-            try {
-                currentSearchType.set(searchRequest.searchType());
+        final Boolean invoked = searchRequest.getHeader(SEARCH_REQUEST_INVOKED);
+        if (invoked != null && invoked.booleanValue()) {
+            if (queryResultCache.canCache(searchRequest)) {
+                @SuppressWarnings({ "rawtypes", "unchecked" })
+                final ActionListener cacheListener = queryResultCache
+                        .execute(searchRequest, listener, chain);
+                if (cacheListener != null) {
+                    chain.proceed(action, request, cacheListener);
+                }
+            } else {
                 chain.proceed(action, request, listener);
-            } finally {
-                currentSearchType.remove();
-            }
-        } else if (queryResultCache.canCache(searchRequest)) {
-            final ActionListener cacheListener = queryResultCache.execute(
-                    searchRequest, listener, chain);
-            if (cacheListener != null) {
-                chain.proceed(action, request, cacheListener);
             }
         } else {
+            searchRequest.putHeader(SEARCH_REQUEST_INVOKED, Boolean.TRUE);
             chain.proceed(action, request, listener);
         }
-
     }
 
     @Override
     public void apply(final String action, final ActionResponse response,
-            final ActionListener listener, final ActionFilterChain chain) {
+            @SuppressWarnings("rawtypes") final ActionListener listener, final ActionFilterChain chain) {
         chain.proceed(action, response, listener);
     }
 
