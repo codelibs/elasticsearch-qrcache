@@ -7,6 +7,8 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
+import java.util.UUID;
+
 import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchResponse;
@@ -33,7 +35,8 @@ public class QueryResultCacheTest {
                 settingsBuilder.put(QueryResultCache.INDICES_CACHE_QUERY_SIZE,
                         "10%");
             }
-        }).build(newConfigs().numOfNode(1).ramIndexStore());
+        }).build(newConfigs().numOfNode(1).ramIndexStore()
+                .clusterName(UUID.randomUUID().toString()));
         runner.ensureGreen();
     }
 
