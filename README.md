@@ -12,10 +12,9 @@ On the other hand, our Query Result Cache stores the response to a cache.
 
 | Version   | Elasticsearch |
 |:---------:|:-------------:|
-| master    | 1.5.X         |
+| master    | 1.6.X         |
+| 1.6.0     | 1.6.0         |
 | 1.5.0     | 1.5.0         |
-| 1.4.1     | 1.4.2         |
-| 1.3.0     | 1.3.2         |
 
 ### Issues/Questions
 
@@ -24,19 +23,10 @@ Please file an [issue](https://github.com/codelibs/elasticsearch-qrcache/issues 
 
 ## Installation
 
-### Install QRCache Plugin (For 1.4.x)
+### Install QRCache Plugin
 
-    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-extension/1.5.0
-    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.5.0
-
-### Install QRCache Plugin (For 1.4.x)
-
-    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-extension/1.4.1
-    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.4.1
-
-### Install QRCache Plugin (For 1.3.x)
-
-    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.3.0
+    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-extension/1.6.0
+    $ $ES_HOME/bin/plugin --install org.codelibs/elasticsearch-qrcache/1.6.0
 
 ## References
 
