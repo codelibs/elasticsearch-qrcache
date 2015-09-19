@@ -21,8 +21,10 @@ import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.search.ShardSearchFailure;
 import org.elasticsearch.action.support.ActionFilterChain;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
+import org.elasticsearch.cluster.metadata.MetaData;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.cache.Cache;
 import org.elasticsearch.common.cache.CacheBuilder;
@@ -162,9 +164,9 @@ public class QueryResultCache extends AbstractComponent implements
         if (indices == null || indices.length == 0) {
             return false;
         }
+        MetaData metadata = clusterService.state().getMetaData();
         for (final String indexName : indices) {
-            final IndexMetaData index = clusterService.state().getMetaData()
-                    .index(indexName);
+            final IndexMetaData index = metadata.index(metadata.concreteSingleIndex(indexName,IndicesOptions.strictExpandOpen()));
             if (index == null) {
                 return false;
             }
