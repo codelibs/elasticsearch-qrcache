@@ -5,9 +5,20 @@
 		<format>zip</format>
 	</formats>
 	<includeBaseDirectory>false</includeBaseDirectory>
+	<files>
+		<file>
+			<source>${basedir}/src/main/plugin-metadata/plugin-descriptor.properties</source>
+			<filtered>true</filtered>
+		</file>
+		<!-- 
+		<file>
+			<source>${basedir}/src/main/plugin-metadata/plugin-security.policy</source>
+			<filtered>false</filtered>
+		</file>
+		 -->
+	</files>
 	<dependencySets>
 		<dependencySet>
-			<outputDirectory>/</outputDirectory>
 			<useProjectArtifact>true</useProjectArtifact>
 			<useTransitiveFiltering>true</useTransitiveFiltering>
 			<excludes>

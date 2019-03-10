@@ -2,13 +2,13 @@ package org.codelibs.elasticsearch.qrcache.cache;
 
 import java.io.IOException;
 
+import org.elasticsearch.common.ParseField;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Streamable;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.xcontent.ToXContent;
 import org.elasticsearch.common.xcontent.XContentBuilder;
-import org.elasticsearch.common.xcontent.XContentBuilderString;
 
 public class QueryResultCacheStats implements Streamable, ToXContent {
 
@@ -27,9 +27,8 @@ public class QueryResultCacheStats implements Streamable, ToXContent {
     public QueryResultCacheStats() {
     }
 
-    public QueryResultCacheStats(final long size, final long requestMemorySize,
-            final long responseMemorySize, final long total, final long hits,
-            final long evictions) {
+    public QueryResultCacheStats(final long size, final long requestMemorySize, final long responseMemorySize, final long total,
+            final long hits, final long evictions) {
         this.size = size;
         this.requestMemorySize = requestMemorySize;
         this.responseMemorySize = responseMemorySize;
@@ -100,47 +99,35 @@ public class QueryResultCacheStats implements Streamable, ToXContent {
     }
 
     @Override
-    public XContentBuilder toXContent(final XContentBuilder builder,
-            final Params params) throws IOException {
-        builder.startObject(Fields.QUERY_CACHE_STATS);
-        builder.field(Fields.SIZE, getSize());
-        builder.byteSizeField(Fields.REQUEST_MEMORY_SIZE_IN_BYTES,
-                Fields.REQUEST_MEMORY_SIZE, requestMemorySize);
-        builder.byteSizeField(Fields.RESPONSE_MEMORY_SIZE_IN_BYTES,
-                Fields.RESPONSE_MEMORY_SIZE, responseMemorySize);
-        builder.field(Fields.TOTAL, getTotal());
-        builder.field(Fields.HITS, getHits());
-        builder.field(Fields.EVICTIONS, getEvictions());
+    public XContentBuilder toXContent(final XContentBuilder builder, final Params params) throws IOException {
+        builder.startObject(Fields.QUERY_CACHE_STATS.getPreferredName());
+        builder.field(Fields.SIZE.getPreferredName(), getSize());
+        builder.field(Fields.REQUEST_MEMORY_SIZE_IN_BYTES.getPreferredName(), requestMemorySize);
+        builder.field(Fields.RESPONSE_MEMORY_SIZE_IN_BYTES.getPreferredName(), responseMemorySize);
+        builder.field(Fields.TOTAL.getPreferredName(), getTotal());
+        builder.field(Fields.HITS.getPreferredName(), getHits());
+        builder.field(Fields.EVICTIONS.getPreferredName(), getEvictions());
         builder.endObject();
         return builder;
     }
 
     static final class Fields {
-        static final XContentBuilderString QUERY_CACHE_STATS = new XContentBuilderString(
-                "query_result_cache");
+        static final ParseField QUERY_CACHE_STATS = new ParseField("query_result_cache");
 
-        static final XContentBuilderString SIZE = new XContentBuilderString(
-                "size");
+        static final ParseField SIZE = new ParseField("size");
 
-        static final XContentBuilderString REQUEST_MEMORY_SIZE = new XContentBuilderString(
-                "request_memory_size");
+        static final ParseField REQUEST_MEMORY_SIZE = new ParseField("request_memory_size");
 
-        static final XContentBuilderString REQUEST_MEMORY_SIZE_IN_BYTES = new XContentBuilderString(
-                "request_memory_size_in_bytes");
+        static final ParseField REQUEST_MEMORY_SIZE_IN_BYTES = new ParseField("request_memory_size_in_bytes");
 
-        static final XContentBuilderString RESPONSE_MEMORY_SIZE = new XContentBuilderString(
-                "response_memory_size");
+        static final ParseField RESPONSE_MEMORY_SIZE = new ParseField("response_memory_size");
 
-        static final XContentBuilderString RESPONSE_MEMORY_SIZE_IN_BYTES = new XContentBuilderString(
-                "response_memory_size_in_bytes");
+        static final ParseField RESPONSE_MEMORY_SIZE_IN_BYTES = new ParseField("response_memory_size_in_bytes");
 
-        static final XContentBuilderString TOTAL = new XContentBuilderString(
-                "total");
+        static final ParseField TOTAL = new ParseField("total");
 
-        static final XContentBuilderString HITS = new XContentBuilderString(
-                "hits");
+        static final ParseField HITS = new ParseField("hits");
 
-        static final XContentBuilderString EVICTIONS = new XContentBuilderString(
-                "evictions");
+        static final ParseField EVICTIONS = new ParseField("evictions");
     }
 }

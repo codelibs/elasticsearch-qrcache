@@ -1,79 +1,62 @@
 package org.codelibs.elasticsearch.qrcache.cache;
 
-import static org.elasticsearch.action.search.ShardSearchFailure.readShardSearchFailure;
-import static org.elasticsearch.common.Strings.hasLength;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.RamUsageEstimator;
-import org.codelibs.elasticsearch.qrcache.QueryResultCachePlugin;
-import org.elasticsearch.Version;
-import org.elasticsearch.action.ActionListener;
-import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.action.search.ShardSearchFailure;
-import org.elasticsearch.action.support.ActionFilterChain;
-import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
+import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.bytes.BytesReference;
-import org.elasticsearch.common.cache.Cache;
-import org.elasticsearch.common.cache.CacheBuilder;
-import org.elasticsearch.common.cache.RemovalListener;
-import org.elasticsearch.common.cache.RemovalNotification;
-import org.elasticsearch.common.cache.Weigher;
-import org.elasticsearch.common.component.AbstractComponent;
-import org.elasticsearch.common.inject.Inject;
-import org.elasticsearch.common.io.stream.BytesStreamInput;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamInput;
-import org.elasticsearch.common.logging.ESLogger;
-import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.metrics.CounterMetric;
+import org.elasticsearch.common.settings.Setting;
+import org.elasticsearch.common.settings.Setting.Property;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.unit.MemorySizeValue;
+import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.concurrent.ConcurrentCollections;
 import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException;
-import org.elasticsearch.search.internal.InternalSearchResponse;
+import org.elasticsearch.index.shard.ShardId;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.internal.ShardSearchTransportRequest;
+import org.elasticsearch.search.query.QuerySearchResult;
 import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.transport.Transport.Connection;
+import org.elasticsearch.transport.TransportException;
+import org.elasticsearch.transport.TransportInterceptor.AsyncSender;
+import org.elasticsearch.transport.TransportRequestOptions;
+import org.elasticsearch.transport.TransportResponse;
+import org.elasticsearch.transport.TransportResponseHandler;
 
-public class QueryResultCache extends AbstractComponent implements
-        RemovalListener<QueryResultCache.Key, BytesReference> {
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
+import com.google.common.cache.Weigher;
 
-    public static final String INDEX_CACHE_QUERY_ENABLED = "index.cache.query_result.enable";
-
-    public static final String INDICES_CACHE_QUERY_CLEAN_INTERVAL = "indices.cache.query_result.clean_interval";
-
-    public static final String INDICES_CACHE_QUERY_SIZE = "indices.cache.query_result.size";
-
-    public static final String INDICES_CACHE_QUERY_EXPIRE = "indices.cache.query_result.expire";
-
-    protected final ESLogger logger;
+public class QueryResultCache implements RemovalListener<QueryResultCache.Key, BytesReference> {
+    private static final Logger logger = LogManager.getLogger(QueryResultCache.class);
 
     private final ThreadPool threadPool;
 
-    private ClusterService clusterService;
+    private final ClusterService clusterService;
 
     private final TimeValue cleanInterval;
 
     private final Reaper reaper;
 
-    private volatile String size;
-
-    private volatile TimeValue expire;
-
     protected volatile Cache<Key, BytesReference> cache;
 
-    private volatile Set<String> indicesToClean = ConcurrentCollections
-            .newConcurrentSet();
+    private volatile Set<String> indicesToClean = ConcurrentCollections.newConcurrentSet();
 
     private volatile CounterMetric hitsMetric = new CounterMetric();
 
@@ -81,39 +64,40 @@ public class QueryResultCache extends AbstractComponent implements
 
     private volatile CounterMetric evictionsMetric = new CounterMetric();
 
-    @Inject
-    public QueryResultCache(final Settings settings,
-            final ClusterService clusterService, final ThreadPool threadPool) {
-        super(settings);
+    public static final Setting<TimeValue> CLEAN_INTERVAL_SETTING =
+            Setting.timeSetting("query_result_cache.clean_interval", TimeValue.timeValueSeconds(10), Property.NodeScope);
+
+    public static final Setting<ByteSizeValue> MAX_SIZE_SETTING =
+            Setting.memorySizeSetting("query_result_cache.max_size", "1%", Property.NodeScope);
+
+    public static final Setting<TimeValue> EXPIRE_SETTING =
+            Setting.timeSetting("query_result_cache.expire", TimeValue.ZERO, Property.NodeScope);
+
+    public static final Setting<Boolean> INDEX_ENABLED_SETTING =
+            Setting.boolSetting("index.query_result_cache.enabled", false, Property.IndexScope);
+
+    public QueryResultCache(final Settings settings, final ClusterService clusterService, final ThreadPool threadPool) {
         this.clusterService = clusterService;
         this.threadPool = threadPool;
-        this.logger = Loggers.getLogger(
-                QueryResultCachePlugin.INDEX_LOGGER_NAME, settings);
 
-        cleanInterval = settings.getAsTime(INDICES_CACHE_QUERY_CLEAN_INTERVAL,
-                TimeValue.timeValueSeconds(10));
-        size = settings.get(INDICES_CACHE_QUERY_SIZE, "1%");
-        expire = settings.getAsTime(INDICES_CACHE_QUERY_EXPIRE, null);
-        buildCache();
+        cleanInterval = CLEAN_INTERVAL_SETTING.get(settings);
+        buildCache(settings);
 
         reaper = new Reaper();
         threadPool.schedule(cleanInterval, ThreadPool.Names.SAME, reaper);
 
     }
 
-    private void buildCache() {
-        final long sizeInBytes = MemorySizeValue
-                .parseBytesSizeValueOrHeapRatio(size).bytes();
+    private void buildCache(Settings settings) {
 
-        final CacheBuilder<Key, BytesReference> cacheBuilder = CacheBuilder
-                .newBuilder().maximumWeight(sizeInBytes)
-                .weigher(new QueryCacheWeigher()).removalListener(this);
+        final CacheBuilder<Key, BytesReference> cacheBuilder = CacheBuilder.newBuilder()
+                .maximumWeight(MAX_SIZE_SETTING.get(settings).getBytes()).weigher(new QueryCacheWeigher()).removalListener(this);
 
         cacheBuilder.concurrencyLevel(16);
 
-        if (expire != null) {
-            cacheBuilder.expireAfterAccess(expire.millis(),
-                    TimeUnit.MILLISECONDS);
+        final TimeValue expire = EXPIRE_SETTING.get(settings);
+        if (expire != TimeValue.ZERO) {
+            cacheBuilder.expireAfterAccess(expire.millis(), TimeUnit.MILLISECONDS);
         }
 
         cache = cacheBuilder.build();
@@ -122,18 +106,15 @@ public class QueryResultCache extends AbstractComponent implements
     public QueryResultCacheStats stats() {
         long reqMemSize = 0;
         long resMemSize = 0;
-        for (final Map.Entry<Key, BytesReference> entry : cache.asMap()
-                .entrySet()) {
+        for (final Map.Entry<Key, BytesReference> entry : cache.asMap().entrySet()) {
             reqMemSize += entry.getKey().ramBytesUsed();
             resMemSize += entry.getValue().length();
         }
-        return new QueryResultCacheStats(cache.size(), reqMemSize, resMemSize,
-                totalMetric.count(), hitsMetric.count(),
+        return new QueryResultCacheStats(cache.size(), reqMemSize, resMemSize, totalMetric.count(), hitsMetric.count(),
                 evictionsMetric.count());
     }
 
-    private static class QueryCacheWeigher implements
-            Weigher<Key, BytesReference> {
+    private static class QueryCacheWeigher implements Weigher<Key, BytesReference> {
         @Override
         public int weigh(final Key key, final BytesReference value) {
             return (int) (key.ramBytesUsed() + value.length());
@@ -146,155 +127,105 @@ public class QueryResultCache extends AbstractComponent implements
     }
 
     @Override
-    public void onRemoval(
-            final RemovalNotification<Key, BytesReference> notification) {
+    public void onRemoval(final RemovalNotification<Key, BytesReference> notification) {
         if (notification.getKey() == null) {
             return;
         }
         evictionsMetric.inc();
     }
 
-    public boolean canCache(final SearchRequest request) {
-        if (hasLength(request.templateSource())) {
+    public boolean canCache(final ShardSearchTransportRequest request) {
+        final ShardId shardId = request.shardId();
+        final String indexName = shardId.getIndexName();
+        final IndexMetaData index = clusterService.state().getMetaData().index(indexName);
+        if (index == null) {
             return false;
         }
-        final String[] indices = request.indices();
-        if (indices == null || indices.length == 0) {
+        if (!INDEX_ENABLED_SETTING.get(index.getSettings())) {
             return false;
-        }
-        for (final String indexName : indices) {
-            final IndexMetaData index = clusterService.state().getMetaData()
-                    .index(indexName);
-            if (index == null) {
-                return false;
-            }
-            if (!index.settings().getAsBoolean(INDEX_CACHE_QUERY_ENABLED,
-                    Boolean.FALSE)) {
-                return false;
-            }
-        }
-        switch (request.searchType()) {
-        case SCAN:
-        case COUNT:
-            return false;
-        default:
-            break;
         }
         return true;
     }
 
-    public ActionListener execute(final SearchRequest request,
-            final ActionListener<SearchResponse> listener,
-            final ActionFilterChain chain) {
+    public <T extends TransportResponse> void sendCacheRequest(final Connection connection, final String action,
+            final ShardSearchTransportRequest request, final TransportRequestOptions options, final TransportResponseHandler<T> handler,
+            final AsyncSender sender) {
         try {
-            final Key key = buildKey(request);
+            final Key key = new Key(request);
             totalMetric.inc();
             final BytesReference value = cache.getIfPresent(key);
             if (value != null) {
                 hitsMetric.inc();
-                final SearchResponse response = readFromCache(value);
+                final QuerySearchResult response = readFromCache(value);
                 if (logger.isDebugEnabled()) {
-                    logger.debug("Read cached response for {}/{}/{}: {}",
-                            response.getTotalShards(), response
-                                    .getSuccessfulShards(), response
-                                    .getFailedShards(), response.getHits()
-                                    .getTotalHits());
+                    logger.debug("Read cached response for {}/{}/{}: {}", response.getShardIndex(), response.getRequestId(),
+                            response.getTotalHits());
                 }
-                listener.onResponse(response);
+                @SuppressWarnings("unchecked")
+                T res = (T) response;
+                handler.handleResponse(res);
             } else {
-                return new ActionListener<SearchResponse>() {
+                sender.sendRequest(connection, action, request, options, new TransportResponseHandler<T>() {
+
                     @Override
-                    public void onResponse(final SearchResponse response) {
-                        onCache(key, response);
-                        listener.onResponse(response);
+                    public T read(final StreamInput in) throws IOException {
+                        return handler.read(in);
                     }
 
                     @Override
-                    public void onFailure(final Throwable e) {
-                        listener.onFailure(e);
+                    public void handleResponse(final T response) {
+                        onCache(key, (QuerySearchResult) response);
+                        handler.handleResponse(response);
                     }
-                };
+
+                    @Override
+                    public void handleException(final TransportException exp) {
+                        handler.handleException(exp);
+                    }
+
+                    @Override
+                    public String executor() {
+                        return handler.executor();
+                    }
+                });
             }
         } catch (final IOException e) {
-            listener.onFailure(e);
+            handler.handleException(new TransportException(e));
         }
-        return null;
     }
 
-    private void onCache(final Key key, final SearchResponse response) {
-        if (response.isTimedOut()) {
+    private void onCache(final Key key, final QuerySearchResult result) {
+        if (result.searchTimedOut()) {
             return;
         }
 
+        //        try {
+        //            threadPool.executor(ThreadPool.Names.GENERIC).execute(() -> {
         try {
-            threadPool.executor(ThreadPool.Names.GENERIC).execute(
-                    new Runnable() {
-                        @Override
-                        public void run() {
-                            try {
-                                cache.get(key, new Callable<BytesReference>() {
-                                    @Override
-                                    public BytesReference call()
-                                            throws Exception {
-                                        final BytesStreamOutput out = new BytesStreamOutput();
-                                        response.writeTo(out);
-                                        return out.bytes();
-                                    }
-                                });
-                            } catch (final ExecutionException e) {
-                                logger.warn(
-                                        "Failed to write a responses to a buffer.",
-                                        e);
-                            }
-                            if (logger.isDebugEnabled()) {
-                                logger.debug(
-                                        "Wrote cached response for {}/{}/{}: {}",
-                                        response.getTotalShards(), response
-                                                .getSuccessfulShards(),
-                                        response.getFailedShards(), response
-                                                .getHits().getTotalHits());
-                            }
-                        }
-                    });
-        } catch (final EsRejectedExecutionException ex) {
-            logger.warn("Can not run a process to store a cache", ex);
+            cache.get(key, () -> {
+                try (final BytesStreamOutput out = new BytesStreamOutput()) {
+                    result.writeTo(out);
+                    return out.bytes();
+                }
+            });
+        } catch (final ExecutionException e) {
+            logger.warn("Failed to write a responses to a buffer.", e);
         }
+        if (logger.isDebugEnabled()) {
+            logger.debug("Wrote cached response for {}/{}: {}", result.getShardIndex(), result.getRequestId(), result.getTotalHits());
+        }
+        //            });
+        //        } catch (final EsRejectedExecutionException ex) {
+        //            logger.warn("Can not run a process to store a cache", ex);
+        //        }
     }
 
-    private SearchResponse readFromCache(final BytesReference value)
-            throws IOException {
-        final long startTime = System.nanoTime();
-        final StreamInput in = value.streamInput();
-        Map<String, Object> headers = null;
-        if (in.readBoolean()) {
-            headers = in.readMap();
+    private QuerySearchResult readFromCache(final BytesReference value) throws IOException {
+        try (final StreamInput in = value.streamInput()) {
+            final QuerySearchResult result = new QuerySearchResult();
+            result.readFrom(in);
+            return result;
         }
-        final InternalSearchResponse internalResponse = new InternalSearchResponse(
-                null, null, null, null, false, null);
-        internalResponse.readFrom(in);
-        final int totalShards = in.readVInt();
-        final int successfulShards = in.readVInt();
-        final int size = in.readVInt();
-        ShardSearchFailure[] shardFailures;
-        if (size == 0) {
-            shardFailures = ShardSearchFailure.EMPTY_ARRAY;
-        } else {
-            shardFailures = new ShardSearchFailure[size];
-            for (int i = 0; i < shardFailures.length; i++) {
-                shardFailures[i] = readShardSearchFailure(in);
-            }
-        }
-        final String scrollId = in.readOptionalString();
-        final long tookInMillis = (System.nanoTime() - startTime) / 1000000;
-        final SearchResponse response = new SearchResponse(internalResponse,
-                scrollId, totalShards, successfulShards, tookInMillis,
-                shardFailures);
-        if (headers != null) {
-            for (final Map.Entry<String, Object> entry : headers.entrySet()) {
-                response.putHeader(entry.getKey(), entry.getValue());
-            }
-        }
-        return response;
     }
 
     public void clear(final String index) {
@@ -319,16 +250,9 @@ public class QueryResultCache extends AbstractComponent implements
                 clear(index);
             }
             try {
-                threadPool.executor(ThreadPool.Names.GENERIC).execute(
-                        new Runnable() {
-                            @Override
-                            public void run() {
-                                reaper.reap();
-                            }
-                        });
+                threadPool.executor(ThreadPool.Names.GENERIC).execute(() -> reaper.reap());
             } catch (final EsRejectedExecutionException ex) {
-                logger.debug("Can not run ReaderCleaner - execution rejected",
-                        ex);
+                logger.debug("Can not run ReaderCleaner - execution rejected", ex);
             }
         }
     }
@@ -336,34 +260,27 @@ public class QueryResultCache extends AbstractComponent implements
     public static class Key implements Accountable {
         public final BytesReference value;
 
-        Key(final BytesReference value) {
-            this.value = value;
+        public Key(final ShardSearchTransportRequest request) throws IOException {
+            final ShardId shardId = request.shardId();
+            final SearchSourceBuilder source = request.source();
+            try (final BytesStreamOutput out = new BytesStreamOutput()) {
+                shardId.writeTo(out);
+                source.writeTo(out);
+                this.value = out.bytes();
+            }
         }
 
-        public String[] indices() {
-            try (BytesStreamInput in = new BytesStreamInput(value)) {
-                if (in.readBoolean()) {
-                    in.readMap();
-                }
-                if (in.getVersion().before(Version.V_1_2_0)) {
-                    in.readByte();
-                }
-                in.readByte();
-
-                final String[] indices = new String[in.readVInt()];
-                for (int i = 0; i < indices.length; i++) {
-                    indices[i] = in.readString();
-                }
-                return indices;
+        public ShardId shardId() {
+            try (StreamInput in = value.streamInput()) {
+                return ShardId.readShardId(in);
             } catch (final IOException e) {
-                return new String[0];
+                return null;
             }
         }
 
         @Override
         public long ramBytesUsed() {
-            return RamUsageEstimator.NUM_BYTES_OBJECT_REF
-                    + RamUsageEstimator.NUM_BYTES_LONG + value.length();
+            return RamUsageEstimator.NUM_BYTES_OBJECT_REF + Long.BYTES + value.length();
         }
 
         @Override
@@ -398,12 +315,6 @@ public class QueryResultCache extends AbstractComponent implements
 
     }
 
-    private static Key buildKey(final SearchRequest request) throws IOException {
-        final BytesStreamOutput out = new BytesStreamOutput();
-        request.writeTo(out);
-        return new Key(out.bytes().copyBytesArray());
-    }
-
     private class Reaper implements Runnable {
 
         private volatile boolean closed;
@@ -422,20 +333,15 @@ public class QueryResultCache extends AbstractComponent implements
                 return;
             }
             try {
-                threadPool.executor(ThreadPool.Names.GENERIC).execute(
-                        new Runnable() {
-                            @Override
-                            public void run() {
-                                try {
-                                    reap();
-                                } finally {
-                                    schedule();
-                                }
-                            }
-                        });
+                threadPool.executor(ThreadPool.Names.GENERIC).execute(() -> {
+                    try {
+                        reap();
+                    } finally {
+                        schedule();
+                    }
+                });
             } catch (final EsRejectedExecutionException ex) {
-                logger.debug("Can not run ReaderCleaner - execution rejected",
-                        ex);
+                logger.debug("Can not run ReaderCleaner - execution rejected", ex);
                 schedule();
             }
         }
@@ -447,12 +353,10 @@ public class QueryResultCache extends AbstractComponent implements
                     break;
                 }
                 try {
-                    threadPool.schedule(cleanInterval, ThreadPool.Names.SAME,
-                            this);
+                    threadPool.schedule(cleanInterval, ThreadPool.Names.SAME, this);
                     success = true;
                 } catch (final EsRejectedExecutionException ex) {
-                    logger.warn("Can not schedule Reaper - execution rejected",
-                            ex);
+                    logger.warn("Can not schedule Reaper - execution rejected", ex);
                     try {
                         Thread.sleep(1000);
                     } catch (final InterruptedException e) {
@@ -472,38 +376,20 @@ public class QueryResultCache extends AbstractComponent implements
             final List<Key> keyToClean = new ArrayList<>();
 
             for (final Key key : cache.asMap().keySet()) {
-                final String[] indices = key.indices();
-                if (indices == null || indices.length == 0) {
-                    keyToClean.add(key);
-                    if (logger.isDebugEnabled()) {
-                        try {
-                            final StreamInput in = key.value.streamInput();
-                            final SearchRequest request = new SearchRequest();
-                            request.readFrom(in);
-                            logger.debug("Invalidating cache: {}", request);
-                        } catch (final IOException e) {
-                            logger.warn("Failed to read a search request.", e);
-                        }
-                    }
+                final ShardId shardId = key.shardId();
+                if (shardId == null) {
+                    keyToClean.add(key); // invalid key?
                 } else {
-                    for (final String index : indices) {
-                        if (currentIndicesToClean.contains(index)) {
-                            keyToClean.add(key);
-                            if (logger.isDebugEnabled()) {
-                                try {
-                                    final StreamInput in = key.value
-                                            .streamInput();
-                                    final SearchRequest request = new SearchRequest();
-                                    request.readFrom(in);
-                                    logger.debug("Invalidating cache: {}",
-                                            request);
-                                } catch (final IOException e) {
-                                    logger.warn(
-                                            "Failed to read a search request.",
-                                            e);
-                                }
+                    if (currentIndicesToClean.contains(shardId.getIndexName())) {
+                        keyToClean.add(key);
+                        if (logger.isDebugEnabled()) {
+                            try (final StreamInput in = key.value.streamInput()) {
+                                ShardId.readShardId(in);
+                                SearchSourceBuilder source = new SearchSourceBuilder(in);
+                                logger.debug("Invalidating cache: {}", source);
+                            } catch (final IOException e) {
+                                logger.warn("Failed to read a search request.", e);
                             }
-                            break;
                         }
                     }
                 }
@@ -514,4 +400,5 @@ public class QueryResultCache extends AbstractComponent implements
             }
         }
     }
+
 }
