@@ -1,7 +1,5 @@
 package org.codelibs.elasticsearch.qrcache.transport;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.codelibs.elasticsearch.qrcache.cache.QueryResultCache;
 import org.elasticsearch.action.search.SearchTransportService;
 import org.elasticsearch.search.internal.ShardSearchTransportRequest;
@@ -13,7 +11,6 @@ import org.elasticsearch.transport.TransportResponse;
 import org.elasticsearch.transport.TransportResponseHandler;
 
 public class QrcTransportInterceptor implements TransportInterceptor {
-    private static final Logger logger = LogManager.getLogger(QrcTransportInterceptor.class);
 
     private QueryResultCache queryResultCache;
 

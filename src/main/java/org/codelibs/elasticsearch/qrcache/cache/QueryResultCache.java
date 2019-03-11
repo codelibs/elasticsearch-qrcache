@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.LogManager;
@@ -90,13 +89,14 @@ public class QueryResultCache implements RemovalListener<QueryResultCache.Key, B
 
     private void buildCache(Settings settings) {
 
-        final CacheBuilder<Key, BytesReference> cacheBuilder = CacheBuilder.newBuilder()
-                .maximumWeight(MAX_SIZE_SETTING.get(settings).getBytes()).weigher(new QueryCacheWeigher()).removalListener(this);
+        final long maxWeight = MAX_SIZE_SETTING.get(settings).getBytes();
+        final CacheBuilder<Key, BytesReference> cacheBuilder =
+                CacheBuilder.newBuilder().maximumWeight(maxWeight).weigher(new QueryCacheWeigher()).removalListener(this);
 
         cacheBuilder.concurrencyLevel(16);
 
         final TimeValue expire = EXPIRE_SETTING.get(settings);
-        if (expire != TimeValue.ZERO) {
+        if (!expire.equals(TimeValue.ZERO)) {
             cacheBuilder.expireAfterAccess(expire.millis(), TimeUnit.MILLISECONDS);
         }
 
@@ -199,25 +199,15 @@ public class QueryResultCache implements RemovalListener<QueryResultCache.Key, B
             return;
         }
 
-        //        try {
-        //            threadPool.executor(ThreadPool.Names.GENERIC).execute(() -> {
-        try {
-            cache.get(key, () -> {
-                try (final BytesStreamOutput out = new BytesStreamOutput()) {
-                    result.writeTo(out);
-                    return out.bytes();
-                }
-            });
-        } catch (final ExecutionException e) {
-            logger.warn("Failed to write a responses to a buffer.", e);
+        try (final BytesStreamOutput out = new BytesStreamOutput()) {
+            result.writeTo(out);
+            cache.put(key, out.bytes());
+        } catch (final IOException e) {
+            logger.warn("Failed to write a responses to the cache.", e);
         }
         if (logger.isDebugEnabled()) {
             logger.debug("Wrote cached response for {}/{}: {}", result.getShardIndex(), result.getRequestId(), result.getTotalHits());
         }
-        //            });
-        //        } catch (final EsRejectedExecutionException ex) {
-        //            logger.warn("Can not run a process to store a cache", ex);
-        //        }
     }
 
     private QuerySearchResult readFromCache(final BytesReference value) throws IOException {
@@ -285,10 +275,7 @@ public class QueryResultCache implements RemovalListener<QueryResultCache.Key, B
 
         @Override
         public int hashCode() {
-            final int prime = 31;
-            int result = 1;
-            result = prime * result + (value == null ? 0 : value.hashCode());
-            return result;
+            return value.hashCode();
         }
 
         @Override
@@ -303,14 +290,7 @@ public class QueryResultCache implements RemovalListener<QueryResultCache.Key, B
                 return false;
             }
             final Key other = (Key) obj;
-            if (value == null) {
-                if (other.value != null) {
-                    return false;
-                }
-            } else if (!value.equals(other.value)) {
-                return false;
-            }
-            return true;
+            return value.equals(other.value);
         }
 
     }
